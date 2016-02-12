@@ -777,7 +777,7 @@ class BeamDecoder(DiagonalCompoundDecoder):
     """
     TUNE_JUMP_WEIGHT = 0.5
     TUNE_ALREADY_ALIGNED = 0.25
-    TUNE_PREV_CONFIDENCE = 6
+    TUNE_PREV_CONFIDENCE = 4.5
     TUNE_OVERRIDE_THRESH = 0.5
     BEAM_WIDTH = 3
 
@@ -899,8 +899,8 @@ class BeamDecoder(DiagonalCompoundDecoder):
                         else: # only adjust score for NULL alignment
                             alignments.append([self.alignment(alignment),
                                                self.score(alignment)+score])
-                        #remove worst alignment
-                        alignments.remove(min(alignments,key=lambda(x):self.score(x)))
+                        ##remove worst alignment
+                        #alignments.remove(min(alignments,key=lambda(x):self.score(x)))
                     else:
                         if j < len(english)-1:
                             alignments.append([self.alignment(alignment)+[((i,j),score)],
@@ -908,7 +908,10 @@ class BeamDecoder(DiagonalCompoundDecoder):
                         else:
                             alignments.append([self.alignment(alignment),
                                                self.score(alignment)+score])
-
+            
+                while len(alignments)>self.BEAM_WIDTH:
+                    #remove worst alignment
+                    alignments.remove(min(alignments,key=lambda(x):self.score(x)))
         forwards = alignments
         
         alignments = [[[],0]]
@@ -955,8 +958,8 @@ class BeamDecoder(DiagonalCompoundDecoder):
                         else: # only adjust score for NULL alignment
                             alignments.append([self.alignment(alignment),
                                                self.score(alignment)+score])
-                        #remove worst alignment
-                        alignments.remove(min(alignments,key=lambda(x):self.score(x)))
+                        ##remove worst alignment
+                        #alignments.remove(min(alignments,key=lambda(x):self.score(x)))
                     else:
                         if j < len(english)-1:
                             alignments.append([self.alignment(alignment)+[((i,j),score)],
@@ -964,6 +967,10 @@ class BeamDecoder(DiagonalCompoundDecoder):
                         else:
                             alignments.append([self.alignment(alignment),
                                                self.score(alignment)+score])
+                
+                while len(alignments)>self.BEAM_WIDTH:
+                    #remove worst alignment
+                    alignments.remove(min(alignments,key=lambda(x):self.score(x)))
 
         backwards = alignments
 
