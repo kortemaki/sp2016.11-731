@@ -20,9 +20,9 @@ for (i, (f_e, g, a)) in enumerate(zip(open(opts.bitext), open(opts.alignment), s
   size_s += len(sure)
   size_a_and_s += len(alignment & sure)
   size_a_and_p += len(alignment & possible) + len(alignment & sure)
-  if (i<opts.n):
+  if (i<opts.n and len(ewords)<20):
     sys.stdout.write("  Alignment %i  KEY: ( ) = guessed, * = sure, ? = possible\n" % i)
-    sys.stdout.write("  ")
+    sys.stdout.write("  -")
     for j in ewords:
       sys.stdout.write("---")
     sys.stdout.write("\n")
@@ -33,7 +33,7 @@ for (i, (f_e, g, a)) in enumerate(zip(open(opts.bitext), open(opts.alignment), s
         point = "*" if (i,j) in sure else "?" if (i,j) in possible else " "
         sys.stdout.write("%s%s%s" % (left,point,right))
       sys.stdout.write(" | %s\n" % f_i)
-    sys.stdout.write("  ")
+    sys.stdout.write("  -")
     for j in ewords:
       sys.stdout.write("---")
     sys.stdout.write("\n")
