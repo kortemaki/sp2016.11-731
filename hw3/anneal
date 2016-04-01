@@ -1,0 +1,162 @@
+#!/usr/bin/env python
+import argparse
+import sys, pdb
+import models
+import heapq
+import numpy, math, random
+import numpy.random
+import collections
+from collections import namedtuple
+
+parser = argparse.ArgumentParser(description='Simple phrase based decoder.')
+parser.add_argument('-i', '--input', dest='input', default='data/input', help='File containing sentences to translate (default=data/input)')
+parser.add_argument('-t', '--translation-model', dest='tm', default='data/tm', help='File containing translation model (default=data/tm)')
+parser.add_argument('-s', '--stack-size', dest='s', default=1, type=int, help='Maximum stack size (default=1)')
+parser.add_argument('-n', '--num_sentences', dest='num_sents', default=sys.maxint, type=int, help='Number of sentences to decode (default=no limit)')
+parser.add_argument('-l', '--language-model', dest='lm', default='data/lm', help='File containing ARPA-format language model (default=data/lm)')
+parser.add_argument('-v', '--verbose', dest='verbose', action='store_true', default=False,  help='Verbose mode (default=off)')
+parser.add_argument('-k', '--restarts', dest='k', default=1, type=int, help='Number of random restarts to execute')
+parser.add_argument('-T', '--temperature', dest='T', default=100, type=int, help='Initial temperature for simulated annealing')
+parser.add_argument('-d', '--time-const', dest='t', default=1, type=int, help='Cooling rate linear time constant')
+opts = parser.parse_args()
+
+
+tm = models.TM(opts.tm, sys.maxint)
+lm = models.LM(opts.lm)
+sys.stderr.write('Decoding %s...\n' % (opts.input,))
+input_sents = [tuple(line.strip().split()) for line in open(opts.input).readlines()[:opts.num_sents]]
+
+class memoized(object):
+  '''Decorator. Caches a function's return value each time it is called.
+  If called later with the same arguments, the cached value is returned
+  (not reevaluated).
+  '''
+  def __init__(self, func):
+    self.func = func
+    self.cache = {}
+  def __call__(self, *args):
+    if not isinstance(args, collections.Hashable):
+      # uncacheable. a list, for instance.
+      # better to not cache than blow up.
+      return self.func(*args)
+    if args in self.cache:
+      return self.cache[args]
+    else:
+      value = self.func(*args)
+      self.cache[args] = value
+      return value
+  def __repr__(self):
+    '''Return the function's docstring.'''
+    return self.func.__doc__
+  def __get__(self, obj, objtype):
+    '''Support instance methods.'''
+    return functools.partial(self.__call__, obj)
+
+@memoized
+def score_phrase(lm_state,phrase):
+  logprob = 0
+  for word in phrase.english.split():
+    (lm_state, word_logprob) = lm.score(lm_state, word)
+    logprob += word_logprob
+  return (lm_state,logprob)
+
+hypothesis = namedtuple('hypothesis', 'logprob, lm_state, coverage, predecessor, phrase')
+
+def compute_translation(f,permutation):
+  initial_hypothesis = hypothesis(0.0, lm.begin(),numpy.zeros(len(f),dtype=bool),None,None)
+
+  stacks = [{} for _ in f] + [{}]
+  stacks[0][lm.begin()] = initial_hypothesis
+  for (i,stack) in enumerate(stacks[:-1]):
+    # extend the top s hypotheses in the current stack
+    for h in heapq.nlargest(opts.s, stack.itervalues(), key=lambda h: h.logprob): # prune
+      j = 0
+      #we can consider block-translating contiguous phrases in the permutation
+      index = permutation[i]
+      while permutation[i+j]==index+j:
+        if f[index:index+j+1] in tm:
+          for phrase in tm[f[index:index+j+1]]:
+            (lm_state,logprob) = score_phrase(h.lm_state,phrase)
+            logprob += h.logprob + phrase.logprob
+            logprob += lm.end(lm_state) if index+j+1 == len(f) else 0.0
+            new_hypothesis = hypothesis(logprob, lm_state, numpy.array(h.coverage), h, phrase)
+            new_hypothesis.coverage[index:index+j+1] = True
+            if lm_state not in stacks[i+j+1] \
+               or stacks[i+j+1][lm_state].logprob < logprob: # second case is recombination
+              stacks[i+j+1][lm_state] = new_hypothesis 
+
+        #to expand the phrase we must have another word which has not already been translated
+        j += 1
+        if i+j==len(f) or h.coverage[i+j]:
+          break
+
+  # find best translation by looking at the best scoring hypothesis
+  # on the last stack
+  return max(stacks[-1].itervalues(), key=lambda h: h.logprob) if stacks[-1] else None
+
+def extract_english_recursive(h):
+  return '' if h.predecessor is None \
+    else '%s%s ' % (extract_english_recursive(h.predecessor), h.phrase.english)
+
+def default_translation(f):
+  permutation = range(len(f))
+  translation = compute_translation(f,permutation)
+  return (permutation, translation)
+
+def random_translation(f):
+  translation = None
+  while translation == None:
+    permutation = numpy.random.permutation(range(len(f)))
+    translation = compute_translation(f,permutation)
+  return (permutation, translation)
+
+def random_neighbor(f,permutation):
+  translation = None
+  while translation == None:
+    # switch two adjacent indices
+    a,b = random.randint(0,len(f)-1),random.randint(0,len(f)-1)
+    permutation[a],permutation[b] = permutation[b],permutation[a]
+    translation = compute_translation(f,permutation)
+  return (permutation, translation)
+
+def accept(e,ep,T):
+  return ep > e or math.exp(-(e-ep)/T) > random.random()
+
+for f in input_sents:
+  # The following code implements a simulated annealing decoding
+  # algorithm to permute the target phrases.
+  
+  # monotonic initialization
+  (sbest, ebest) = default_translation(f)
+
+  #loop k times with random restarts
+  for i in range(opts.k):
+    translation = ebest
+    permutation = sbest
+    
+    #Initialize temperature
+    T = opts.T
+    t = opts.t
+    while T>0:
+      (p_neighbor, neighbor) = random_neighbor(f,permutation)
+
+      if accept(translation.logprob, neighbor.logprob, T):
+        permutation, translation = p_neighbor, neighbor
+        if ebest.logprob < translation.logprob:
+          ebest = translation
+          sbest = permutation
+      t -= 1
+      if t==0:
+        T -= 1
+        t = opts.t
+
+  winner = ebest
+
+  print extract_english_recursive(winner)
+
+  if opts.verbose:
+    def extract_tm_logprob(h):
+      return 0.0 if h.predecessor is None else h.phrase.logprob + extract_tm_logprob(h.predecessor)
+    tm_logprob = extract_tm_logprob(winner)
+    sys.stderr.write('LM = %f, TM = %f, Total = %f\n' % 
+                     (winner.logprob - tm_logprob, tm_logprob, winner.logprob))
