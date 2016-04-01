@@ -17,7 +17,7 @@ parser.add_argument('-l', '--language-model', dest='lm', default='data/lm', help
 parser.add_argument('-v', '--verbose', dest='verbose', action='store_true', default=False,  help='Verbose mode (default=off)')
 parser.add_argument('-k', '--restarts', dest='k', default=1, type=int, help='Number of random restarts to execute')
 parser.add_argument('-T', '--temperature', dest='T', default=100, type=int, help='Initial temperature for simulated annealing')
-parser.add_argument('-d', '--time-const', dest='t', default=1, type=int, help='Cooling rate linear time constant')
+parser.add_argument('-d', '--time-const', dest='d', default=1, type=int, help='Cooling rate linear time constant')
 opts = parser.parse_args()
 
 
@@ -114,8 +114,13 @@ def random_neighbor(f,permutation):
   translation = None
   while translation == None:
     # switch two adjacent indices
-    a,b = random.randint(0,len(f)-1),random.randint(0,len(f)-1)
-    permutation[a],permutation[b] = permutation[b],permutation[a]
+    #a,b = random.randint(0,len(f)-1),random.randint(0,len(f)-1)
+    # switch two adjacent phrases
+    i = random.randint(1,len(f)-2)
+    A = random.randint(i,len(f)-1)
+    B = random.randint(0,A-1)
+    permutation[B:B+i],permutation[B+i:A+i] = numpy.array(permutation[A:A+i]),\
+                                              numpy.array(permutation[B:A])
     translation = compute_translation(f,permutation)
   return (permutation, translation)
 
@@ -136,7 +141,7 @@ for f in input_sents:
     
     #Initialize temperature
     T = opts.T
-    t = opts.t
+    t = opts.d
     while T>0:
       (p_neighbor, neighbor) = random_neighbor(f,permutation)
 
@@ -148,7 +153,7 @@ for f in input_sents:
       t -= 1
       if t==0:
         T -= 1
-        t = opts.t
+        t = opts.d
 
   winner = ebest
 
