@@ -22,9 +22,7 @@ Simulated annealing is a form of Metropolis Hastings sampling, in which a diffic
 
 I submit results from the following configuration, which may be outperformed by higher temperature, slower cooling simulations:
 
---restarts=100, --temperature=5--time-const=3
-
-Somehow, this produces unaligned sentences?
+--stack-size=10 --restarts=100 --temperature=5 --time-const=3
 
 -------------- File Specifics --------------
 
