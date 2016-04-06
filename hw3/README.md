@@ -16,13 +16,15 @@ Otherwise, e' is rejected and the next timestep will reconsider e.
 
 At each timestep, the temperature (parameter T) cools according to the cooling rate (parameter d), decreasing the free energy in the system and approaching a stable sample from the distribution.
 
-The system will also explore a number of random restarts (parameter k) from the best-seen conditions.
+The system will also explore a number of random restarts (parameter k) which reset the simulation to the most ideal condition seen previously.
 
 Simulated annealing is a form of Metropolis Hastings sampling, in which a difficult-to-sample distribution is approximated exactly in the limit for slowly cooling, high-temperature simulations.
 
 I submit results from the following configuration, which may be outperformed by higher temperature, slower cooling simulations:
 
---stack-size=10 --restarts=100 --temperature=5 --time-const=3
+--stack-size=10 --restarts=300 --temperature=3 --time-const=200
+
+These results attain a final model score of -5035.91
 
 -------------- File Specifics --------------
 
