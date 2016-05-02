@@ -121,55 +121,77 @@ class RNNDecoder:
             r_t = bias + (R * state.output())
             ydist = softmax(r_t)
             dist = ydist.vec_value()
-            rnd = random.random()
-            for y_t,p in enumerate(dist):
-                rnd -= p
-                if rnd <=0: break
+            y_t = -1
+            while y_t < starttok:
+                rnd = random.random()
+                for y_t,p in enumerate(dist):
+                    rnd -= p
+                    if rnd <=0: break
             y.append(y_t)
         return y
         
 
 if __name__ == '__main__':
-    trainsrc,traintgt = (util.CorpusReader(sys.argv[1]),util.CorpusReader(sys.argv[2]))
-    
-    vocabsrc,vocabtgt = (util.Vocab.from_corpus(trainsrc),util.Vocab.from_corpus(traintgt))
+    if not len(sys.argv)>3:
+        print "Usage: python nedtm.py [train.src] [train.tgt] {train/test} (test.src)"
+        sys.exit()
+    # prepare training corpus and vocabulary
+    if sys.argv[3]=="train":
+        trainsrc,traintgt = (util.CorpusReader(sys.argv[1]),util.CorpusReader(sys.argv[2]))
+        vocabsrc,vocabtgt = (util.Vocab.from_corpus(trainsrc),util.Vocab.from_corpus(traintgt))
+        pickle.dump(vocabsrc,open("{0}-vocab.pickle".format(sys.argv[1].split("/")[-1]),'wb'))
+        pickle.dump(vocabtgt,open("{0}-vocab.pickle".format(sys.argv[2].split("/")[-1]),'wb'))
+    else:
+        if not len(sys.argv)>4:
+            print "No test file given!  If configuring for decoding, please provide a test file."
+            print "Usage: python nedtm.py [train.src] [train.tgt] {train/test} (test.src)"
+            sys.exit()
+        vocabsrc = pickle.load(open("{0}-vocab.pickle".format(sys.argv[1].split("/")[-1]),'rb'))
+        vocabtgt = pickle.load(open("{0}-vocab.pickle".format(sys.argv[2].split("/")[-1]),'rb'))
+        testsrc = util.CorpusReader(sys.argv[4])
     VOCAB_SIZE_SRC,VOCAB_SIZE_TGT = (vocabsrc.size(),vocabtgt.size())
 
-    #Bilingual Forward RNN
+    #Initialize bilingual Forward RNN
     model = Model()
     sgd = AdadeltaTrainer(model)
     decoder = RNNDecoder(model, LAYERS, INPUT_DIM, HIDDEN_DIM,
                           VOCAB_SIZE_SRC+VOCAB_SIZE_TGT, builder=LSTMBuilder)
 
-    pickle.dump(vocabsrc,open("{0}-vocab.pickle".format(sys.argv[1].split("/")[-1]),'wb'))
-    pickle.dump(vocabtgt,open("{0}-vocab.pickle".format(sys.argv[2].split("/")[-1]),'wb'))
-    train = list(zip(trainsrc,traintgt))
-    for ITER in xrange(N_ITERS):
-        random.shuffle(train)
-        loss = 0.0
-        for i,instance in enumerate(train):
-            sentsrc,senttgt = instance
-            isentsrc = [vocabsrc.w2i[w] for w in sentsrc]
-            isenttgt = [vocabtgt.w2i[w]+VOCAB_SIZE_SRC for w in senttgt]
-            errs = decoder.BuildLMGraph(isentsrc,isenttgt)
-            loss += errs.scalar_value()
-            errs.backward()
-            sgd.update(1.0)
-        print "ITER",ITER,loss
-        decoder.m.save("{0}-{1}_{2}.rnn".format(sys.argv[1].split("/")[-1],
-                                                sys.argv[2].split("/")[-1],ITER))
-        if ITER>0:
-            os.remove("{0}-{1}_{2}.rnn".format(sys.argv[1].split("/")[-1],
-                                               sys.argv[2].split("/")[-1],ITER-1))
+    if sys.argv[3]=="train": #train
+        train = list(zip(trainsrc,traintgt))
+        for ITER in xrange(N_ITERS):
+            random.shuffle(train)
+            loss = 0.0
+            for i,instance in enumerate(train):
+                sentsrc,senttgt = instance
+                isentsrc = [vocabsrc.w2i[w] for w in sentsrc]
+                isenttgt = [vocabtgt.w2i[w]+VOCAB_SIZE_SRC for w in senttgt]
+                errs = decoder.BuildLMGraph(isentsrc,isenttgt)
+                loss += errs.scalar_value()
+                errs.backward()
+                sgd.update(1.0)
+            print "ITER",ITER,loss
+            decoder.m.save("{0}-{1}_{2}.rnn".format(sys.argv[1].split("/")[-1],
+                                                    sys.argv[2].split("/")[-1],ITER))
+            if ITER>0:
+                os.remove("{0}-{1}_{2}.rnn".format(sys.argv[1].split("/")[-1],
+                                                   sys.argv[2].split("/")[-1],ITER-1))
         
-    decoder.m.save("{0}-{1}.rnn".format(sys.argv[1].split("/")[-1],
-                                        sys.argv[2].split("/")[-1]))
-    os.remove("{0}-{1}_{2}.rnn".format(sys.argv[1].split("/")[-1],
-                                       sys.argv[2].split("/")[-1],N_ITERS-1))
-    pdb.set_trace()
+        decoder.m.save("{0}-{1}.rnn".format(sys.argv[1].split("/")[-1],
+                                            sys.argv[2].split("/")[-1]))
+        os.remove("{0}-{1}_{2}.rnn".format(sys.argv[1].split("/")[-1],
+                                           sys.argv[2].split("/")[-1],N_ITERS-1))
+        print "Program completed under normal operation"
 
-    #to decode sentsrc
-    #isentsrc = [vocabsrc.w2i[w] for w in sentsrc]
-    #[vocabtgt.i2w[i-VOCAB_SIZE_SRC] 
-    #    for i in decoder.decode(isentsrc,vocabtgt.w2i['<s>']+VOCAB_SIZE_SRC,
-    #                                     vocabtgt.w2i['</s>']+VOCAB_SIZE_SRC)]
+    else: #decode
+        decoder.m.load("{0}-{1}.rnn".format(sys.argv[1].split("/")[-1],
+                                            sys.argv[2].split("/")[-1]))
+        test = list(testsrc)
+        for sentsrc in test:
+            isentsrc = [vocabsrc.w2i[w] for w in sentsrc]
+            print " ".join([vocabtgt.i2w[i-VOCAB_SIZE_SRC]
+                   for i in decoder.decode(isentsrc,vocabtgt.w2i['<s>']+VOCAB_SIZE_SRC,
+                                           vocabtgt.w2i['</s>']+VOCAB_SIZE_SRC)])
+
+    sys.exit()
+
